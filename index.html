@@ -492,7 +492,7 @@ button{position:relative;overflow:hidden;}
 const SUPABASE_URL = 'https://aeilijrkzbknqgzhqcfs.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_CI1qzjD21-22paezh5zvuA_zj7Mb-Sb';
 
-window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+supabase = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
 /* =========================================================
    BACKGROUND PARTICLE ENGINE (UX/UI FX)
