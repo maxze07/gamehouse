@@ -6,6 +6,10 @@
 <title>GAME HOUSE | เกมเฮ้าส์ - Ultimate Cyber Gaming Hub</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Press+Start+2P&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+
+<!-- Supabase JS Client CDN -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
 <style>
 :root{
   --bg:#05030a;
@@ -459,10 +463,19 @@ button{position:relative;overflow:hidden;}
   </div>
 
   <div id="toast" class="toast hidden"></div>
-  <footer>GAMEHOUSE // เดโมทำงานในเบราว์เซอร์นี้ก่อน รอเชื่อม Supabase เพื่อเล่นข้ามเครื่อง</footer>
+  <footer>GAMEHOUSE // เชื่อมต่อระบบเรียลไทม์ออนไลน์ผ่าน Supabase</footer>
 </div>
 
 <script>
+/* =========================================================
+   SUPABASE CLIENT SETUP
+   ========================================================= */
+// ⚠️ กรุณาใส่ SUPABASE_URL และ SUPABASE_KEY ของคุณที่นี่ ⚠️
+const SUPABASE_URL = 'https://aeilijrkzbknqgzhqcfs.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_CI1qzjD21-22paezh5zvuA_zj7Mb-Sb';
+
+const supabase = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+
 /* =========================================================
    BACKGROUND PARTICLE ENGINE (UX/UI FX)
    ========================================================= */
@@ -491,44 +504,47 @@ function animBg(){
 animBg();
 
 /* =========================================================
-   DATA LAYER (ชั่วคราว: localStorage)
+   DATA LAYER (Supabase Backend API)
    ========================================================= */
 const DB = {
-  _read(key, def){ try{ return JSON.parse(localStorage.getItem(key)) ?? def; }catch(e){ return def; } },
-  _write(key, val){ localStorage.setItem(key, JSON.stringify(val)); },
-
   async hash(text){
     const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
     return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
   },
   async usernameTaken(username){
-    const names = DB._read('gh_db_usernames', {});
-    return !!names[username.toLowerCase()];
+    if(!supabase) return false;
+    const { data } = await supabase.from('users').select('code').eq('username', username.toLowerCase()).single();
+    return !!data;
   },
   async createUser(username, password){
-    const names = DB._read('gh_db_usernames', {});
+    if(!supabase) return {error:'supabase_not_configured'};
     const key = username.toLowerCase();
-    if(names[key]) return {error:'username_taken'};
-    const users = DB._read('gh_db_users', {});
+    const isTaken = await DB.usernameTaken(key);
+    if(isTaken) return {error:'username_taken'};
+    
     let code;
-    do{ code = genCode(6); }while(users[code]);
+    let isCodeDup = true;
+    while(isCodeDup){
+      code = genCode(6);
+      const { data } = await supabase.from('users').select('code').eq('code', code).single();
+      if(!data) isCodeDup = false;
+    }
+    
     const passHash = await DB.hash(password);
-    const user = {code, username, name:username, passHash};
-    users[code] = user;
-    names[key] = code;
-    DB._write('gh_db_users', users);
-    DB._write('gh_db_usernames', names);
+    const user = {code, username: key, name:username, passHash};
+    const { error } = await supabase.from('users').insert([user]);
+    if(error) return {error: error.message};
     return {error:null, user};
   },
   async getUser(code){
-    const users = DB._read('gh_db_users', {});
-    return users[code] || null;
+    if(!supabase) return null;
+    const { data } = await supabase.from('users').select('*').eq('code', code).single();
+    return data || null;
   },
   async getUserByUsername(username){
-    const names = DB._read('gh_db_usernames', {});
-    const code = names[username.toLowerCase()];
-    if(!code) return null;
-    return DB.getUser(code);
+    if(!supabase) return null;
+    const { data } = await supabase.from('users').select('*').eq('username', username.toLowerCase()).single();
+    return data || null;
   },
   async verifyLogin(username, password){
     const user = await DB.getUserByUsername(username);
@@ -538,67 +554,65 @@ const DB = {
     return {error:null, user};
   },
   async sendFriendRequest(userCode, friendCode){
-    const friends = DB._read('gh_db_friends', []);
-    if(friends.find(f=>f.user_code===userCode && f.friend_code===friendCode)) return {error:'duplicate'};
-    friends.push({id:genCode(10), user_code:userCode, friend_code:friendCode, status:'pending'});
-    DB._write('gh_db_friends', friends);
+    if(!supabase) return {error:'no_db'};
+    const { data: dup } = await supabase.from('friends').select('id').eq('user_code', userCode).eq('friend_code', friendCode);
+    if(dup && dup.length > 0) return {error:'duplicate'};
+    const { error } = await supabase.from('friends').insert([{
+      id: genCode(10), user_code: userCode, friend_code: friendCode, status: 'pending'
+    }]);
+    if(error) return {error: error.message};
     return {error:null};
   },
   async acceptFriend(id){
-    const friends = DB._read('gh_db_friends', []);
-    const f = friends.find(x=>x.id===id);
-    if(f) f.status = 'accepted';
-    DB._write('gh_db_friends', friends);
+    if(!supabase) return;
+    await supabase.from('friends').update({ status: 'accepted' }).eq('id', id);
   },
   async getIncoming(code){
-    return DB._read('gh_db_friends', []).filter(f=>f.friend_code===code && f.status==='pending');
+    if(!supabase) return [];
+    const { data } = await supabase.from('friends').select('*').eq('friend_code', code).eq('status', 'pending');
+    return data || [];
   },
   async getFriendCodes(code){
-    const friends = DB._read('gh_db_friends', []);
+    if(!supabase) return [];
+    const { data: f1 } = await supabase.from('friends').select('friend_code').eq('user_code', code).eq('status', 'accepted');
+    const { data: f2 } = await supabase.from('friends').select('user_code').eq('friend_code', code).eq('status', 'accepted');
     const s = new Set();
-    friends.filter(f=>f.user_code===code && f.status==='accepted').forEach(f=>s.add(f.friend_code));
-    friends.filter(f=>f.friend_code===code && f.status==='accepted').forEach(f=>s.add(f.user_code));
+    (f1||[]).forEach(f=>s.add(f.friend_code));
+    (f2||[]).forEach(f=>s.add(f.user_code));
     return [...s];
   },
 
   async createRoom(room){
-    const rooms = DB._read('gh_db_rooms', {});
-    rooms[room.id] = room;
-    DB._write('gh_db_rooms', rooms);
-    DB._ping();
+    if(!supabase) return room;
+    await supabase.from('rooms').insert([room]);
     return room;
   },
   async getRoomByCode(roomCode){
-    const rooms = DB._read('gh_db_rooms', {});
-    return Object.values(rooms).find(r=>r.room_code===roomCode) || null;
+    if(!supabase) return null;
+    const { data } = await supabase.from('rooms').select('*').eq('room_code', roomCode).single();
+    return data || null;
   },
   async getRoom(id){
-    const rooms = DB._read('gh_db_rooms', {});
-    return rooms[id] || null;
+    if(!supabase) return null;
+    const { data } = await supabase.from('rooms').select('*').eq('id', id).single();
+    return data || null;
   },
   async updateRoom(id, patch){
-    const rooms = DB._read('gh_db_rooms', {});
-    if(!rooms[id]) return null;
-    rooms[id] = {...rooms[id], ...patch};
-    DB._write('gh_db_rooms', rooms);
-    DB._ping();
-    return rooms[id];
+    if(!supabase) return null;
+    const { data, error } = await supabase.from('rooms').update(patch).eq('id', id).select().single();
+    if(error) return null;
+    return data;
   },
   async deleteRoom(id){
-    const rooms = DB._read('gh_db_rooms', {});
-    delete rooms[id];
-    DB._write('gh_db_rooms', rooms);
-    DB._ping();
-  },
-  _ping(){
-    localStorage.setItem('gh_db_ping', String(Date.now()));
+    if(!supabase) return;
+    await supabase.from('rooms').delete().eq('id', id);
   }
 };
 
 /* ---------- STATE ---------- */
 let me = JSON.parse(localStorage.getItem('gh_user') || 'null');
 let room = null;
-let roomPoll = null;
+let realtimeChannel = null;
 
 function genCode(len){
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -730,18 +744,8 @@ function boot(){
     loadFriends();
     document.getElementById('tabAdmin').classList.toggle('hidden', !me.isAdmin);
   }
-  window.addEventListener('storage', onStorageEvent);
 }
-function onStorageEvent(e){
-  if(e.key==='gh_db_ping'){
-    if(room){
-      DB.getRoom(room.id).then(r=>{ if(r){ room = r; renderRoom(); } });
-    }
-    if(!document.getElementById('screen-home').classList.contains('hidden')){
-      loadFriends();
-    }
-  }
-}
+
 function show(id){
   ['screen-auth','screen-home','screen-room'].forEach(s=>{
     const el = document.getElementById(s);
@@ -770,8 +774,11 @@ async function createUser(){
   if(username.length<3){ toast('ชื่อผู้ใช้ต้องยาวอย่างน้อย 3 ตัวอักษร'); return; }
   if(!pass1 || pass1.length<4){ toast('รหัสผ่านต้องยาวอย่างน้อย 4 ตัวอักษร'); return; }
   if(pass1 !== pass2){ toast('รหัสผ่านทั้งสองช่องไม่ตรงกัน'); return; }
+  
   const res = await DB.createUser(username, pass1);
   if(res.error==='username_taken'){ toast('ชื่อผู้ใช้นี้มีคนใช้แล้ว'); return; }
+  if(res.error){ toast('เกิดข้อผิดพลาด: '+res.error); return; }
+  
   me = res.user;
   localStorage.setItem('gh_user', JSON.stringify(me));
   toast('สร้างสำเร็จ! รหัสประจำตัว คือ '+me.code);
@@ -816,11 +823,12 @@ function switchHomeTab(t){
 }
 
 /* ---------- ADMIN ---------- */
-function renderAdmin(){
-  const rooms = DB._read('gh_db_rooms', {});
-  const users = DB._read('gh_db_users', {});
+async function renderAdmin(){
+  if(!supabase) return;
+  const { data: rooms } = await supabase.from('rooms').select('*');
+  const { data: users } = await supabase.from('users').select('*');
   const box = document.getElementById('adminRoomList');
-  const list = Object.values(rooms);
+  const list = rooms || [];
   box.innerHTML = '';
   if(list.length===0){
     box.innerHTML = '<div class="empty">ยังไม่มีห้องที่เปิดอยู่</div>';
@@ -834,17 +842,20 @@ function renderAdmin(){
       box.appendChild(el);
     });
   }
-  document.getElementById('adminUserCount').textContent = 'ผู้เล่นที่ลงทะเบียนทั้งหมด: '+Object.keys(users).length+' คน';
+  document.getElementById('adminUserCount').textContent = 'ผู้เล่นที่ลงทะเบียนทั้งหมด: '+(users?users.length:0)+' คน';
 }
 async function adminDeleteRoom(id){
   await DB.deleteRoom(id);
   toast('ลบห้องแล้ว');
   renderAdmin();
 }
-function adminWipeAll(){
+async function adminWipeAll(){
   if(!confirm('ล้างข้อมูลผู้เล่น/ห้อง/เพื่อนทั้งหมดในระบบ? การกระทำนี้ย้อนกลับไม่ได้')) return;
-  ['gh_db_users','gh_db_usernames','gh_db_friends','gh_db_rooms'].forEach(k=>localStorage.removeItem(k));
-  DB._ping();
+  if(supabase){
+    await supabase.from('rooms').delete().neq('id', '0');
+    await supabase.from('friends').delete().neq('id', '0');
+    await supabase.from('users').delete().neq('code', '0');
+  }
   toast('ล้างข้อมูลระบบเรียบร้อย');
   renderAdmin();
 }
@@ -899,7 +910,7 @@ async function acceptFriend(id){
   loadFriends();
 }
 
-/* ---------- ROOMS ---------- */
+/* ---------- ROOMS & REALTIME ---------- */
 async function createRoom(){
   const max = parseInt(document.getElementById('maxPlayers').value);
   SFX.select();
@@ -930,27 +941,41 @@ async function joinRoomByCode(){
   SFX.select();
   const players = [...r.players, {code:me.code, name:me.name}];
   const updated = await DB.updateRoom(r.id, {players});
-  enterRoom(updated);
+  enterRoom(updated || r);
 }
+
 function enterRoom(r){
   room = r;
   _roomSound = {winner:null, chatLen:(r.chat||[]).length, phase:null};
   show('screen-room');
   document.getElementById('roomCodeDisplay').textContent = r.room_code;
-  startRoomPolling();
+  subscribeRealtimeRoom(r.id);
   renderRoom();
 }
-function startRoomPolling(){
-  if(roomPoll) clearInterval(roomPoll);
-  roomPoll = setInterval(async ()=>{
-    if(!room) return;
-    const r = await DB.getRoom(room.id);
-    if(r){ room = r; renderRoom(); }
-  }, 1200);
+
+function subscribeRealtimeRoom(roomId){
+  if(!supabase) return;
+  if(realtimeChannel){
+    supabase.removeChannel(realtimeChannel);
+  }
+  realtimeChannel = supabase.channel(`room_${roomId}`)
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` }, payload => {
+      room = payload.new;
+      renderRoom();
+    })
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` }, payload => {
+      toast('ห้องนี้ถูกปิดหรือลบโดยโฮสต์แล้ว');
+      leaveRoom(false);
+    })
+    .subscribe();
 }
-async function leaveRoom(){
-  if(roomPoll){ clearInterval(roomPoll); roomPoll=null; }
-  if(room){
+
+async function leaveRoom(shouldUpdateDb = true){
+  if(realtimeChannel && supabase){
+    supabase.removeChannel(realtimeChannel);
+    realtimeChannel = null;
+  }
+  if(room && shouldUpdateDb){
     const players = room.players.filter(p=>p.code!==me.code);
     if(players.length===0){
       await DB.deleteRoom(room.id);
@@ -961,10 +986,12 @@ async function leaveRoom(){
   room = null;
   show('screen-home');
 }
+
 async function updateRoomState(patch){
   const updated = await DB.updateRoom(room.id, patch);
   if(updated){ room = updated; renderRoom(); }
 }
+
 let _roomSound = {winner:null, chatLen:0, phase:null};
 function handleRoomSound(){
   const st = room.state || {};
@@ -1037,6 +1064,7 @@ function renderRoom(){
   renderChat();
   handleRoomSound();
 }
+
 async function startGame(){
   SFX.win();
   const initState = initGameState(room.game_type, room.players, room.max_players);
@@ -1124,7 +1152,7 @@ const LIAR = {
       diceValues,
       turnOrder: players.map(p=>p.code),
       turnIndex: 0,
-      currentBid: null, // { count: X, face: Y, playerCode: Z }
+      currentBid: null,
       history: [],
       winner: null,
       revealMode: false
@@ -1146,7 +1174,6 @@ const LIAR = {
     const curP = room.players.find(p=>p.code===curCode);
     myTurnBanner(box, mine, mine ? 'ตาคุณท้าบลัฟหรือจับโกหก!' : (curP?curP.name:'เพื่อน')+' กำลังบลัฟเดาลูกเต๋า');
 
-    // Display status of all players cups
     const cupsRow = document.createElement('div'); cupsRow.className='liar-cups';
     st.turnOrder.forEach(code=>{
       const p = room.players.find(pp=>pp.code===code);
@@ -1174,7 +1201,6 @@ const LIAR = {
     });
     box.appendChild(cupsRow);
 
-    // Current Bid Display
     const bidBox = document.createElement('div');
     bidBox.style.cssText = 'text-align:center;padding:12px;background:#060410;border:1px solid var(--magenta);margin:10px 0;clip-path:polygon(8px 0,100% 0,100% 100%,0 100%,0 8px);';
     if(st.currentBid){
@@ -1185,14 +1211,12 @@ const LIAR = {
     }
     box.appendChild(bidBox);
 
-    // History Log
     const hist = document.createElement('div'); hist.className='liar-history';
     st.history.slice(-8).forEach(h=>{
       const d = document.createElement('div'); d.textContent = h; hist.appendChild(d);
     });
     box.appendChild(hist);
 
-    // Player Actions UI
     if(mine && !st.revealMode){
       const ctrls = document.createElement('div'); ctrls.className='liar-controls';
       ctrls.innerHTML = `<div style="margin-bottom:8px;font-weight:700;color:var(--cyan);">🎲 วางคำท้า (บลัฟจานเต๋า):</div>`;
@@ -1261,7 +1285,6 @@ const LIAR = {
     const challenger = room.players.find(p=>p.code===me.code);
     const bidder = room.players.find(p=>p.code===st.currentBid.playerCode);
 
-    // Count actual total matching dices (Face or 1s if Wild rules, here strict Face match)
     let totalMatch = 0;
     Object.values(st.diceValues).forEach(arr=>{
       arr.forEach(v=>{ if(v === st.currentBid.face) totalMatch++; });
@@ -1286,7 +1309,6 @@ const LIAR = {
       winner = newOrder[0];
     }
 
-    // Re-roll all remaining active players
     const newValues = {};
     newOrder.forEach(c=>{
       newValues[c] = LIAR.rollDice(newCounts[c]);
@@ -1625,15 +1647,17 @@ const BINGO = {
 
     const card = st.cards[me.code];
     const grid = document.createElement('div'); grid.className='bingo-card';
-    card.forEach((row)=>row.forEach((val)=>{
-      const cell = document.createElement('div');
-      const marked = val==='FREE' || st.called.includes(val);
-      cell.className = 'bingo-cell' + (marked?' marked':'') + (val==='FREE'?' free':'');
-      cell.textContent = val==='FREE'?'★':val;
-      grid.appendChild(cell);
-    }));
+    if(card){
+      card.forEach((row)=>row.forEach((val)=>{
+        const cell = document.createElement('div');
+        const marked = val==='FREE' || st.called.includes(val);
+        cell.className = 'bingo-cell' + (marked?' marked':'') + (val==='FREE'?' free':'');
+        cell.textContent = val==='FREE'?'★':val;
+        grid.appendChild(cell);
+      }));
+    }
     box.appendChild(grid);
-    if(BINGO.hasLine(card, st.called)){
+    if(card && BINGO.hasLine(card, st.called)){
       const claim = document.createElement('button'); claim.className='cyan'; claim.style.marginTop='10px';
       claim.textContent = '🎉 บิงโก! กดเพื่อประกาศชนะ';
       claim.onclick = ()=>updateRoomState({state:{...st, winner:me.code}, status:'finished'});
@@ -1789,9 +1813,11 @@ const WEREWOLF = {
     rules.innerHTML = `<b>วิธีเล่น:</b> กลางคืน 🌙 หมาป่าเลือกเหยื่อ, หมอปกป้อง 1 คน, ผู้หยั่งรู้ตรวจ 1 คน — กลางวัน ☀️ ทุกคนคุยกันในห้องแชท แล้วโหวตแขวนคอผู้ต้องสงสัย — ชาวบ้านชนะถ้ากำจัดหมาป่าหมด, หมาป่าชนะถ้าเหลือจำนวนเท่ากับหรือมากกว่าชาวบ้าน`;
     box.appendChild(rules);
 
-    const rc = document.createElement('div'); rc.className='ww-rolecard';
-    rc.innerHTML = `<span class="remoji">${info.emoji}</span><div class="rname">บทบาทของคุณ: ${info.name}</div><div class="rdesc">${info.desc}</div>`;
-    box.appendChild(rc);
+    if(info){
+      const rc = document.createElement('div'); rc.className='ww-rolecard';
+      rc.innerHTML = `<span class="remoji">${info.emoji}</span><div class="rname">บทบาทของคุณ: ${info.name}</div><div class="rdesc">${info.desc}</div>`;
+      box.appendChild(rc);
+    }
 
     const amAlive = st.alive.includes(me.code);
     const phaseEl = document.createElement('div');
@@ -1924,142 +1950,134 @@ const WEREWOLF = {
     Object.values(st.votes).forEach(t=>{ tally[t]=(tally[t]||0)+1; });
     let target=null, best=-1, tie=false;
     Object.entries(tally).forEach(([t,c])=>{
-      if(c>best){ best=c; target=t; tie=false; } else if(c===best){ tie=true; }
+      if(c>best){ best=c; target=t; tie=false; }
+      else if(c===best){ tie=true; }
     });
     let alive = st.alive.slice();
     let msg;
-    if(!target || tie){
-      msg = '⚖️ คะแนนโหวตเสมอกัน — ไม่มีใครถูกแขวนคอในวันนี้';
+    if(tie || !target){
+      msg = '⚖️ คะแนนโหวตเท่ากัน ไม่มีใครถูกแขวนคอ';
     } else {
       alive = alive.filter(c=>c!==target);
       const p = room.players.find(pp=>pp.code===target);
-      const wasWolf = st.roles[target]==='werewolf';
-      msg = '⚰️ '+(p?p.name:target)+' ถูกแขวนคอ — เขาคือ'+(wasWolf?' 🐺 หมาป่า!':'ชาวบ้านผู้บริสุทธิ์ 😢');
+      const r = WEREWOLF.ROLE_INFO[st.roles[target]];
+      msg = '⚖️ '+p.name+' ถูกประหารชีวิต! (บทบาท: '+r.emoji+' '+r.name+')';
     }
     const win = WEREWOLF.checkWin({...st, alive});
     await updateRoomState({
-      state:{...st, alive, phase: win?'vote':'night', day: st.day+1, votes:{}, lastNightResult: msg, winner: win||null},
+      state:{...st, alive, phase: win?'vote':'night', day: win?st.day:st.day+1, lastNightResult: msg, votes:{}, winner: win||null},
       status: win?'finished':'playing'
     });
   },
   checkWin(st){
-    const aliveWolves = st.alive.filter(c=>st.roles[c]==='werewolf').length;
-    const aliveOthers = st.alive.length - aliveWolves;
-    if(aliveWolves===0) return 'villagers';
-    if(aliveWolves>=aliveOthers) return 'wolves';
+    const wolves = WEREWOLF.aliveByRole(st,'werewolf').length;
+    const others = st.alive.length - wolves;
+    if(wolves===0) return 'villagers';
+    if(wolves>=others) return 'wolves';
     return null;
   }
 };
 
 /* ================= TREASURE HUNT ================= */
 const TREASURE = {
-  SIZE:24,
   init(players){
-    const size = TREASURE.SIZE;
-    const types = [];
-    for(let i=0;i<3;i++) types.push('map');
-    for(let i=0;i<6;i++) types.push('trap');
-    for(let i=0;i<7;i++) types.push('gold');
-    while(types.length<size) types.push('empty');
-    const shuffled = shuffle(types);
-    const cells = shuffled.map(type=>({type, revealed:false, by:null}));
-    const scores={}, mapCount={};
-    players.forEach(p=>{ scores[p.code]=0; mapCount[p.code]=0; });
-    return { cells, order:players.map(p=>p.code), turn:players[0].code, scores, mapCount, winner:null, lastEvent:null, lastIndex:-1 };
+    const board = Array(36).fill(null);
+    let pool = [];
+    for(let i=0;i<10;i++) pool.push('gold');
+    for(let i=0;i<6;i++) pool.push('trap');
+    for(let i=0;i<4;i++) pool.push('map');
+    while(pool.length<36) pool.push('empty');
+    pool = shuffle(pool);
+
+    const scores = {};
+    players.forEach(p=>{ scores[p.code] = 0; });
+    return {
+      board: pool, revealed: Array(36).fill(false), scores,
+      turnOrder: players.map(p=>p.code), turnIndex: 0, winner: null
+    };
   },
   render(box){
     box.innerHTML='';
     const st = room.state;
     if(st.winner){
       const wp = room.players.find(p=>p.code===st.winner);
-      const w = document.createElement('div'); w.className='win-banner';
-      w.textContent = '💰 '+(wp?wp.name:st.winner)+' คว้าสมบัติไปครอง! 🏆';
-      box.appendChild(w);
-      const rb=document.createElement('button'); rb.textContent='เล่นใหม่'; rb.onclick=()=>updateRoomState({state:TREASURE.init(room.players)});
+      myTurnBanner(box, false, '👑 ' + (wp?wp.name:st.winner) + ' ชนะด้วยคะแนนสูงสุด!');
+      const rb = document.createElement('button'); rb.textContent='เล่นใหม่'; rb.onclick=()=>updateRoomState({state:TREASURE.init(room.players)});
       box.appendChild(rb);
       return;
     }
-    const mine = st.turn===me.code;
-    myTurnBanner(box, mine, mine ? 'ตาของคุณ — เลือกช่องเพื่อขุดสมบัติ' : (room.players.find(p=>p.code===st.turn)?.name+' กำลังขุด'));
+    const curCode = st.turnOrder[st.turnIndex];
+    const mine = curCode === me.code;
+    const curP = room.players.find(p=>p.code===curCode);
+    myTurnBanner(box, mine, mine ? 'ตาคุณสำรวจเกาะสมบัติ!' : (curP?curP.name:'เพื่อน')+' กำลังขุดขอบเขต');
 
-    if(st.lastEvent){
-      const r = document.createElement('div'); r.className='ww-result anim-in';
-      r.textContent = st.lastEvent;
-      box.appendChild(r);
-    }
-
-    const scores = document.createElement('div'); scores.className='tr-scores';
-    room.players.forEach(p=>{
-      const s = document.createElement('div'); s.className='tr-score';
-      s.innerHTML = `${p.name}: ${st.scores[p.code]||0} 💰 <span class="mp">${st.mapCount[p.code]||0}/3 🗺️</span>`;
-      scores.appendChild(s);
+    const scDiv = document.createElement('div'); scDiv.className='tr-scores';
+    st.turnOrder.forEach(code=>{
+      const p = room.players.find(pp=>pp.code===code);
+      const isMe = code === me.code;
+      const card = document.createElement('div'); card.className='tr-score';
+      card.innerHTML = `${p?p.name:code}: <b class="mp">${st.scores[code]}</b> คะแนน ${code===curCode?'👈':''}`;
+      scDiv.appendChild(card);
     });
-    box.appendChild(scores);
+    box.appendChild(scDiv);
 
     const grid = document.createElement('div'); grid.className='tr-grid';
-    st.cells.forEach((cell,i)=>{
-      const c = document.createElement('div');
-      c.className = 'tr-cell' + (cell.revealed?' revealed '+cell.type:'');
-      if(cell.revealed){
-        c.textContent = {map:'🗺️',trap:'💣',gold:'💰',empty:'✨'}[cell.type];
+    st.board.forEach((val, idx)=>{
+      const isRev = st.revealed[idx];
+      const cell = document.createElement('div');
+      cell.className = 'tr-cell' + (isRev ? ' revealed ' + val : '');
+      if(isRev){
+        if(val==='gold') cell.textContent = '💰';
+        else if(val==='trap') cell.textContent = '💣';
+        else if(val==='map') cell.textContent = '🗺️';
+        else cell.textContent = '💨';
       } else {
-        c.textContent = '❓';
-        if(mine) c.onclick = ()=>TREASURE.play(i);
-        else c.style.opacity=.6;
+        cell.textContent = '❓';
+        if(mine) cell.onclick = ()=>TREASURE.dig(idx);
       }
-      grid.appendChild(c);
+      grid.appendChild(cell);
     });
     box.appendChild(grid);
   },
-  async play(i){
+  async dig(idx){
     const st = room.state;
-    if(st.winner || st.turn!==me.code || st.cells[i].revealed) return;
-    const cells = st.cells.map((c,idx)=>idx===i?{...c, revealed:true, by:me.code}:c);
-    const type = cells[i].type;
-    const scores = {...st.scores};
-    const mapCount = {...st.mapCount};
-    let msg;
-    const p = room.players.find(pp=>pp.code===me.code);
-    if(type==='map'){
-      mapCount[me.code] = (mapCount[me.code]||0)+1;
-      msg = '🗺️ '+p.name+' พบชิ้นส่วนแผนที่! ('+mapCount[me.code]+'/3)';
-      SFX.notify();
-    } else if(type==='gold'){
-      scores[me.code] = (scores[me.code]||0)+10;
-      msg = '💰 '+p.name+' ขุดเจอทอง +10 แต้ม!';
-      SFX.coin();
-    } else if(type==='trap'){
-      scores[me.code] = Math.max(0,(scores[me.code]||0)-5);
-      msg = '💣 '+p.name+' เหยียบกับดัก! -5 แต้ม';
-      SFX.fail();
-    } else {
-      msg = '❤️ '+p.name+' ขุดเจอช่องว่างเปล่า ๆ';
-      SFX.click();
-    }
+    if(st.revealed[idx] || st.turnOrder[st.turnIndex] !== me.code) return;
+    
+    SFX.click();
+    const rev = st.revealed.slice();
+    rev[idx] = true;
+
+    const type = st.board[idx];
+    let scoreGain = 0;
+    if(type === 'gold'){ scoreGain = 10; SFX.coin(); }
+    else if(type === 'trap'){ scoreGain = -5; SFX.fail(); }
+    else if(type === 'map'){ scoreGain = 5; SFX.notify(); }
+
+    const newScores = { ...st.scores, [me.code]: Math.max(0, st.scores[me.code] + scoreGain) };
+    const nextIdx = (st.turnIndex + 1) % st.turnOrder.length;
 
     let winner = null;
-    if(mapCount[me.code]>=3){
-      winner = me.code;
-      msg += ' 🥂 ครบ 3 ชิ้นส่วนแล้ว! คว้าสมบัติสำเร็จ!';
+    if(rev.every(x=>x)){
+      let maxSc = -1;
+      Object.entries(newScores).forEach(([c, sc])=>{
+        if(sc > maxSc){ maxSc = sc; winner = c; }
+      });
     }
-    const allRevealed = cells.every(c=>c.revealed);
-    if(!winner && allRevealed){
-      let best=null, bestScore=-1;
-      room.players.forEach(pp=>{ if((scores[pp.code]||0)>bestScore){ bestScore=scores[pp.code]||0; best=pp.code; } });
-      winner = best;
-      msg += ' — ขุดครบทุกช่องแล้ว!';
-    }
-    const order = st.order;
-    const curIdx = order.indexOf(me.code);
-    const nextTurn = order[(curIdx+1)%order.length];
+
     await updateRoomState({
-      state:{...st, cells, scores, mapCount, turn: winner?st.turn:nextTurn, winner, lastEvent: msg, lastIndex:i},
-      status: winner?'finished':'playing'
+      state: {
+        ...st,
+        revealed: rev,
+        scores: newScores,
+        turnIndex: nextIdx,
+        winner
+      },
+      status: winner ? 'finished' : 'playing'
     });
   }
 };
 
-/* ---------- START ---------- */
+/* Start Boot App */
 boot();
 </script>
 </body>
