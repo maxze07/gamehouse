@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+[source: 1]<!DOCTYPE html>
 <html lang="th">
 <head>
 <meta charset="UTF-8">
@@ -492,7 +492,7 @@ button{position:relative;overflow:hidden;}
 const SUPABASE_URL = 'https://aeilijrkzbknqgzhqcfs.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_CI1qzjD21-22paezh5zvuA_zj7Mb-Sb';
 
-window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+supabase = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
 /* =========================================================
    BACKGROUND PARTICLE ENGINE (UX/UI FX)
@@ -573,9 +573,8 @@ const DB = {
   },
   async sendFriendRequest(userCode, friendCode){
     if(!supabase) return {error:'no_db'};
-    const { data: dupA } = await supabase.from('friends').select('id').eq('user_code', userCode).eq('friend_code', friendCode);
-    const { data: dupB } = await supabase.from('friends').select('id').eq('user_code', friendCode).eq('friend_code', userCode);
-    if((dupA && dupA.length > 0) || (dupB && dupB.length > 0)) return {error:'duplicate'};
+    const { data: dup } = await supabase.from('friends').select('id').eq('user_code', userCode).eq('friend_code', friendCode);
+    if(dup && dup.length > 0) return {error:'duplicate'};
     const { error } = await supabase.from('friends').insert([{
       id: genCode(10), user_code: userCode, friend_code: friendCode, status: 'pending'
     }]);
