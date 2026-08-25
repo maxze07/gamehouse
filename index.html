@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+[source: 1]<!DOCTYPE html>
 <html lang="th">
 <head>
 <meta charset="UTF-8">
@@ -240,7 +240,7 @@ button:disabled{opacity:.35;cursor:not-allowed;filter:none;transform:none;box-sh
 .rps-p.out{opacity:.35;text-decoration:line-through;}
 .rps-p.ready{border-color:var(--green); color:var(--green);}
 
-/* ---------- liar's dice (เกมจับโกหก) UI ---------- */
+/* ---------- liar's dice UI ---------- */
 .liar-cups{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin:16px 0;}
 .liar-cup-card{background:#0c0920;border:1px solid var(--line);padding:10px;text-align:center;min-width:110px;}
 .liar-cup-card.mine{border-color:var(--cyan); background:rgba(0,245,212,0.05);}
@@ -294,6 +294,10 @@ button{position:relative;overflow:hidden;}
 .chatmsg .who{color:var(--magenta);font-weight:700;font-size:11px;margin-right:6px;}
 .chatmsg.me .who{color:var(--cyan);}
 .chatempty{color:var(--dim);font-size:12px;text-align:center;padding:14px 0;}
+
+/* ---------- private chat modal / window ---------- */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:100;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);}
+.chat-window{width:90%;max-width:440px;height:500px;display:flex;flex-direction:column;}
 
 /* ---------- werewolf ---------- */
 .ww-phase{text-align:center;padding:14px;margin-bottom:14px;font-family:'Press Start 2P',cursive;font-size:13px;
@@ -462,6 +466,21 @@ button{position:relative;overflow:hidden;}
     </div>
   </div>
 
+  <!-- PRIVATE CHAT MODAL -->
+  <div id="privateChatModal" class="modal-overlay hidden">
+    <div class="panel chat-window">
+      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <h2 style="margin:0;" id="privateChatTitle">💬 แชทส่วนตัว</h2>
+        <button class="ghost small" onclick="closePrivateChat()">✕</button>
+      </div>
+      <div class="chatlog" id="privateChatLog" style="flex:1;height:auto;"></div>
+      <div class="row" style="margin-top:10px;">
+        <input id="privateChatInput" placeholder="พิมพ์ข้อความ..." style="flex:1;min-width:120px;" maxlength="200" onkeydown="if(event.key==='Enter')sendPrivateChat();">
+        <button class="small cyan" onclick="sendPrivateChat()">ส่ง</button>
+      </div>
+    </div>
+  </div>
+
   <div id="toast" class="toast hidden"></div>
   <footer>GAMEHOUSE // เชื่อมต่อระบบเรียลไทม์ออนไลน์ผ่าน Supabase</footer>
 </div>
@@ -470,7 +489,6 @@ button{position:relative;overflow:hidden;}
 /* =========================================================
    SUPABASE CLIENT SETUP
    ========================================================= */
-// ⚠️ กรุณาใส่ SUPABASE_URL และ SUPABASE_KEY ของคุณที่นี่ ⚠️
 const SUPABASE_URL = 'https://aeilijrkzbknqgzhqcfs.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_CI1qzjD21-22paezh5zvuA_zj7Mb-Sb';
 
@@ -606,6 +624,24 @@ const DB = {
   async deleteRoom(id){
     if(!supabase) return;
     await supabase.from('rooms').delete().eq('id', id);
+  },
+  async getPrivateMessages(c1, c2){
+    if(!supabase) return [];
+    const { data } = await supabase.from('private_chats')
+      .select('*')
+      .or(`and(sender_code.eq.${c1},receiver_code.eq.${c2}),and(sender_code.eq.${c2},receiver_code.eq.${c1})`)
+      .order('created_at', { ascending: true });
+    return data || [];
+  },
+  async sendPrivateMessage(sender, receiver, text){
+    if(!supabase) return;
+    await supabase.from('private_chats').insert([{
+      id: genCode(12),
+      sender_code: sender,
+      receiver_code: receiver,
+      text: text,
+      created_at: new Date().toISOString()
+    }]);
   }
 };
 
@@ -613,6 +649,8 @@ const DB = {
 let me = JSON.parse(localStorage.getItem('gh_user') || 'null');
 let room = null;
 let realtimeChannel = null;
+let privateChatChannel = null;
+let activeChatFriend = null;
 
 function genCode(len){
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -860,7 +898,7 @@ async function adminWipeAll(){
   renderAdmin();
 }
 
-/* ---------- FRIENDS ---------- */
+/* ---------- FRIENDS & PRIVATE CHAT ---------- */
 async function sendFriendRequest(){
   const code = document.getElementById('addFriendCode').value.trim().toUpperCase();
   if(!code){ return; }
@@ -899,7 +937,8 @@ async function loadFriends(){
       const u = await DB.getUser(c);
       const el = document.createElement('div');
       el.className = 'friend-item';
-      el.innerHTML = `<span>🟢 ${u?u.name:c} <span class="mono dim">(${c})</span></span>`;
+      el.innerHTML = `<span>🟢 ${u?u.name:c} <span class="mono dim">(${c})</span></span>
+        <button class="small cyan" onclick="openPrivateChat('${c}', '${u?u.name:c}')">💬 แชท</button>`;
       listBox.appendChild(el);
     }
   }
@@ -908,6 +947,67 @@ async function acceptFriend(id){
   await DB.acceptFriend(id);
   toast('เพิ่มเพื่อนแล้ว');
   loadFriends();
+}
+
+async function openPrivateChat(friendCode, friendName){
+  activeChatFriend = { code: friendCode, name: friendName };
+  document.getElementById('privateChatTitle').textContent = '💬 แชทกับ ' + friendName;
+  document.getElementById('privateChatModal').classList.remove('hidden');
+  renderPrivateMessages();
+
+  if(privateChatChannel && supabase){
+    supabase.removeChannel(privateChatChannel);
+  }
+
+  if(supabase){
+    privateChatChannel = supabase.channel('private_chat_realtime')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'private_chats' }, payload => {
+        const msg = payload.new;
+        if((msg.sender_code === me.code && msg.receiver_code === activeChatFriend.code) ||
+           (msg.sender_code === activeChatFriend.code && msg.receiver_code === me.code)){
+          renderPrivateMessages();
+          if(msg.sender_code !== me.code) SFX.notify();
+        }
+      })
+      .subscribe();
+  }
+}
+
+function closePrivateChat(){
+  document.getElementById('privateChatModal').classList.add('hidden');
+  activeChatFriend = null;
+  if(privateChatChannel && supabase){
+    supabase.removeChannel(privateChatChannel);
+    privateChatChannel = null;
+  }
+}
+
+async function renderPrivateMessages(){
+  if(!activeChatFriend) return;
+  const msgs = await DB.getPrivateMessages(me.code, activeChatFriend.code);
+  const log = document.getElementById('privateChatLog');
+  log.innerHTML = '';
+  if(msgs.length === 0){
+    log.innerHTML = '<div class="chatempty">ยังไม่มีข้อความ เริ่มทักทายได้เลย!</div>';
+    return;
+  }
+  msgs.forEach(m=>{
+    const el = document.createElement('div');
+    const isMe = m.sender_code === me.code;
+    el.className = 'chatmsg' + (isMe ? ' me' : '');
+    el.innerHTML = `<span class="who">${isMe ? 'คุณ' : escapeHtml(activeChatFriend.name)}</span>${escapeHtml(m.text)}`;
+    log.appendChild(el);
+  });
+  log.scrollTop = log.scrollHeight;
+}
+
+async function sendPrivateChat(){
+  const input = document.getElementById('privateChatInput');
+  const text = input.value.trim();
+  if(!text || !activeChatFriend) return;
+  input.value = '';
+  await DB.sendPrivateMessage(me.code, activeChatFriend.code, text);
+  renderPrivateMessages();
 }
 
 /* ---------- ROOMS & REALTIME ---------- */
@@ -1899,81 +1999,82 @@ const WEREWOLF = {
   },
   async checkNightDone(){
     const st = room.state;
-    if(st.phase!=='night') return;
-    const wolves = WEREWOLF.aliveByRole(st,'werewolf');
-    const doctors = WEREWOLF.aliveByRole(st,'doctor');
-    const seers = WEREWOLF.aliveByRole(st,'seer');
-    const wolvesDone = wolves.every(c=>st.nightActions.wolfTargets[c]);
-    const doctorDone = doctors.length===0 || st.nightActions.doctorSave;
-    const seerDone = seers.length===0 || st.nightActions.seerCheck;
-    if(wolvesDone && doctorDone && seerDone){
-      await WEREWOLF.resolveNight();
+    const wolves = WEREWOLF.aliveByRole(st, 'werewolf');
+    const doctors = WEREWOLF.aliveByRole(st, 'doctor');
+    const seers = WEREWOLF.aliveByRole(st, 'seer');
+    const na = st.nightActions;
+
+    const wolfDone = wolves.every(c=>na.wolfTargets[c]);
+    const docDone = doctors.length===0 || na.doctorSave !== null;
+    const seerDone = seers.length===0 || na.seerCheck !== null;
+
+    if(wolfDone && docDone && seerDone){
+      const counts = {};
+      Object.values(na.wolfTargets).forEach(c=>counts[c]=(counts[c]||0)+1);
+      let target = null, max = 0;
+      Object.entries(counts).forEach(([c,cnt])=>{ if(cnt>max){ max=cnt; target=c; } });
+
+      let resultMsg = '';
+      let alive = st.alive.slice();
+      if(target && target === na.doctorSave){
+        resultMsg = '☀️ เมื่อคืนนี้ หมอช่วยเหลือเหยื่อไว้ได้ทัน! ไม่มีใครเสียชีวิต';
+      } else if(target){
+        const p = room.players.find(pp=>pp.code===target);
+        resultMsg = '☀️ เมื่อคืนนี้ '+(p?p.name:target)+' ถูกหมาป่าทำร้ายเสียชีวิต 💀';
+        alive = alive.filter(c=>c!==target);
+      } else {
+        resultMsg = '☀️ เมื่อคืนนี้ ไม่มีใครเสียชีวิต';
+      }
+
+      const win = WEREWOLF.checkWin(st.roles, alive);
+      await updateRoomState({
+        state: {
+          ...st, alive, phase:'day', lastNightResult: resultMsg,
+          nightActions:{wolfTargets:{}, doctorSave:null, seerCheck:null},
+          winner: win
+        },
+        status: win ? 'finished' : 'playing'
+      });
     }
-  },
-  async resolveNight(){
-    const st = room.state;
-    if(st.phase!=='night') return;
-    const tally = {};
-    Object.values(st.nightActions.wolfTargets).forEach(t=>{ tally[t]=(tally[t]||0)+1; });
-    let target = null, best = -1;
-    Object.entries(tally).forEach(([t,c])=>{ if(c>best){ best=c; target=t; } });
-    let alive = st.alive.slice();
-    let msg;
-    if(target && target===st.nightActions.doctorSave){
-      msg = '💉 หมอปกป้องเหยื่อได้ทัน! คืนนี้ไม่มีใครเสียชีวิต';
-    } else if(target){
-      alive = alive.filter(c=>c!==target);
-      const p = room.players.find(pp=>pp.code===target);
-      msg = '🩸 คืนนี้ '+(p?p.name:target)+' ถูกหมาป่ากัดเสียชีวิต';
-    } else {
-      msg = '🌫️ คืนนี้เงียบสงบ ไม่มีใครถูกโจมตี';
-    }
-    const win = WEREWOLF.checkWin({...st, alive});
-    await updateRoomState({
-      state:{...st, alive, phase: win?'night':'day', lastNightResult: msg,
-        nightActions:{wolfTargets:{}, doctorSave:null, seerCheck:null}, winner: win||null},
-      status: win?'finished':'playing'
-    });
   },
   async checkVoteDone(){
     const st = room.state;
-    if(st.phase!=='vote') return;
-    const votedCount = st.alive.filter(c=>st.votes[c]).length;
-    if(votedCount>=st.alive.length){
-      await WEREWOLF.resolveVote();
+    const aliveCount = st.alive.length;
+    const votedCount = Object.keys(st.votes).length;
+    if(votedCount >= aliveCount){
+      const counts = {};
+      Object.values(st.votes).forEach(c=>counts[c]=(counts[c]||0)+1);
+      let target=null, max=0, dup=false;
+      Object.entries(counts).forEach(([c,cnt])=>{
+        if(cnt>max){ max=cnt; target=c; dup=false; }
+        else if(cnt===max){ dup=true; }
+      });
+
+      let resultMsg = '';
+      let alive = st.alive.slice();
+      if(dup || !target){
+        resultMsg = '☀️ ผลโหวตเสมอกัน ไม่มีใครถูกแขวนคอในวันนี้';
+      } else {
+        const p = room.players.find(pp=>pp.code===target);
+        const r = WEREWOLF.ROLE_INFO[st.roles[target]];
+        resultMsg = '☀️ ชาวบ้านโหวตแขวนคอ '+(p?p.name:target)+' ('+r.emoji+' '+r.name+') 💀';
+        alive = alive.filter(c=>c!==target);
+      }
+
+      const win = WEREWOLF.checkWin(st.roles, alive);
+      await updateRoomState({
+        state: {
+          ...st, alive, phase:'night', day: st.day+1, lastNightResult: resultMsg, votes:{}, winner: win
+        },
+        status: win ? 'finished' : 'playing'
+      });
     }
   },
-  async resolveVote(){
-    const st = room.state;
-    if(st.phase!=='vote') return;
-    const tally = {};
-    Object.values(st.votes).forEach(t=>{ tally[t]=(tally[t]||0)+1; });
-    let target=null, best=-1, tie=false;
-    Object.entries(tally).forEach(([t,c])=>{
-      if(c>best){ best=c; target=t; tie=false; }
-      else if(c===best){ tie=true; }
-    });
-    let alive = st.alive.slice();
-    let msg;
-    if(tie || !target){
-      msg = '⚖️ คะแนนโหวตเท่ากัน ไม่มีใครถูกแขวนคอ';
-    } else {
-      alive = alive.filter(c=>c!==target);
-      const p = room.players.find(pp=>pp.code===target);
-      const r = WEREWOLF.ROLE_INFO[st.roles[target]];
-      msg = '⚖️ '+p.name+' ถูกประหารชีวิต! (บทบาท: '+r.emoji+' '+r.name+')';
-    }
-    const win = WEREWOLF.checkWin({...st, alive});
-    await updateRoomState({
-      state:{...st, alive, phase: win?'vote':'night', day: win?st.day:st.day+1, lastNightResult: msg, votes:{}, winner: win||null},
-      status: win?'finished':'playing'
-    });
-  },
-  checkWin(st){
-    const wolves = WEREWOLF.aliveByRole(st,'werewolf').length;
-    const others = st.alive.length - wolves;
-    if(wolves===0) return 'villagers';
-    if(wolves>=others) return 'wolves';
+  checkWin(roles, alive){
+    const wolfCount = alive.filter(c=>roles[c]==='werewolf').length;
+    const villagerCount = alive.length - wolfCount;
+    if(wolfCount === 0) return 'villagers';
+    if(wolfCount >= villagerCount) return 'wolves';
     return null;
   }
 };
@@ -1981,19 +2082,16 @@ const WEREWOLF = {
 /* ================= TREASURE HUNT ================= */
 const TREASURE = {
   init(players){
-    const board = Array(36).fill(null);
-    let pool = [];
-    for(let i=0;i<10;i++) pool.push('gold');
-    for(let i=0;i<6;i++) pool.push('trap');
-    for(let i=0;i<4;i++) pool.push('map');
-    while(pool.length<36) pool.push('empty');
-    pool = shuffle(pool);
-
+    const items = Array(36).fill('empty');
+    items[0]='gold'; items[1]='gold'; items[2]='gold'; items[3]='gold'; items[4]='gold';
+    items[5]='map'; items[6]='map'; items[7]='map';
+    items[8]='trap'; items[9]='trap'; items[10]='trap'; items[11]='trap';
+    const grid = shuffle(items);
     const scores = {};
-    players.forEach(p=>{ scores[p.code] = 0; });
+    players.forEach(p=>scores[p.code]=0);
     return {
-      board: pool, revealed: Array(36).fill(false), scores,
-      turnOrder: players.map(p=>p.code), turnIndex: 0, winner: null
+      grid, revealed: Array(36).fill(false), scores,
+      turnIndex:0, order:players.map(p=>p.code), winner:null
     };
   },
   render(box){
@@ -2001,83 +2099,72 @@ const TREASURE = {
     const st = room.state;
     if(st.winner){
       const wp = room.players.find(p=>p.code===st.winner);
-      myTurnBanner(box, false, '👑 ' + (wp?wp.name:st.winner) + ' ชนะด้วยคะแนนสูงสุด!');
-      const rb = document.createElement('button'); rb.textContent='เล่นใหม่'; rb.onclick=()=>updateRoomState({state:TREASURE.init(room.players)});
+      myTurnBanner(box, false, '🏆 ' + (wp?wp.name:st.winner) + ' ชนะด้วยคะแนนสูงสุด!');
+      const rb=document.createElement('button'); rb.textContent='เล่นใหม่'; rb.onclick=()=>updateRoomState({state:TREASURE.init(room.players)});
       box.appendChild(rb);
       return;
     }
-    const curCode = st.turnOrder[st.turnIndex];
+    const curCode = st.order[st.turnIndex];
     const mine = curCode === me.code;
     const curP = room.players.find(p=>p.code===curCode);
-    myTurnBanner(box, mine, mine ? 'ตาคุณสำรวจเกาะสมบัติ!' : (curP?curP.name:'เพื่อน')+' กำลังขุดขอบเขต');
+    myTurnBanner(box, mine, mine ? 'ตาคุณเปิดกล่องสมบัติ!' : (curP?curP.name:'เพื่อน')+' กำลังเลือกเปิดกล่อง');
 
-    const scDiv = document.createElement('div'); scDiv.className='tr-scores';
-    st.turnOrder.forEach(code=>{
+    const scRow = document.createElement('div'); scRow.className='tr-scores';
+    st.order.forEach(code=>{
       const p = room.players.find(pp=>pp.code===code);
-      const isMe = code === me.code;
-      const card = document.createElement('div'); card.className='tr-score';
-      card.innerHTML = `${p?p.name:code}: <b class="mp">${st.scores[code]}</b> คะแนน ${code===curCode?'👈':''}`;
-      scDiv.appendChild(card);
+      const d = document.createElement('div'); d.className='tr-score';
+      d.innerHTML = `<span>${p?p.name:code}: <b class="mp">${st.scores[code]}</b> แต้ม ${code===curCode?'👈':''}</span>`;
+      scRow.appendChild(d);
     });
-    box.appendChild(scDiv);
+    box.appendChild(scRow);
 
-    const grid = document.createElement('div'); grid.className='tr-grid';
-    st.board.forEach((val, idx)=>{
+    const gridDiv = document.createElement('div'); gridDiv.className='tr-grid';
+    st.grid.forEach((type, idx)=>{
       const isRev = st.revealed[idx];
       const cell = document.createElement('div');
-      cell.className = 'tr-cell' + (isRev ? ' revealed ' + val : '');
+      cell.className = 'tr-cell' + (isRev ? ' revealed ' + type : '');
       if(isRev){
-        if(val==='gold') cell.textContent = '💰';
-        else if(val==='trap') cell.textContent = '💣';
-        else if(val==='map') cell.textContent = '🗺️';
-        else cell.textContent = '💨';
+        cell.textContent = type==='gold'?'💰':(type==='map'?'🗺️':(type==='trap'?'💥':'⚪'));
       } else {
         cell.textContent = '❓';
-        if(mine) cell.onclick = ()=>TREASURE.dig(idx);
+        if(mine) cell.onclick = ()=>TREASURE.pick(idx);
       }
-      grid.appendChild(cell);
+      gridDiv.appendChild(cell);
     });
-    box.appendChild(grid);
+    box.appendChild(gridDiv);
   },
-  async dig(idx){
+  async pick(idx){
     const st = room.state;
-    if(st.revealed[idx] || st.turnOrder[st.turnIndex] !== me.code) return;
-    
-    SFX.click();
-    const rev = st.revealed.slice();
-    rev[idx] = true;
+    if(st.winner || st.order[st.turnIndex]!==me.code || st.revealed[idx]) return;
+    const revealed = st.revealed.slice();
+    revealed[idx] = true;
+    const type = st.grid[idx];
+    let pts = 0;
+    if(type==='gold'){ pts = 3; SFX.coin(); }
+    else if(type==='map'){ pts = 1; SFX.click(); }
+    else if(type==='trap'){ pts = -2; SFX.fail(); }
+    else { SFX.click(); }
 
-    const type = st.board[idx];
-    let scoreGain = 0;
-    if(type === 'gold'){ scoreGain = 10; SFX.coin(); }
-    else if(type === 'trap'){ scoreGain = -5; SFX.fail(); }
-    else if(type === 'map'){ scoreGain = 5; SFX.notify(); }
-
-    const newScores = { ...st.scores, [me.code]: Math.max(0, st.scores[me.code] + scoreGain) };
-    const nextIdx = (st.turnIndex + 1) % st.turnOrder.length;
+    const scores = {...st.scores, [me.code]: Math.max(0, st.scores[me.code] + pts)};
+    const nextIdx = (st.turnIndex + 1) % st.order.length;
+    const allDone = revealed.every(r=>r);
 
     let winner = null;
-    if(rev.every(x=>x)){
+    if(allDone){
       let maxSc = -1;
-      Object.entries(newScores).forEach(([c, sc])=>{
-        if(sc > maxSc){ maxSc = sc; winner = c; }
+      Object.entries(scores).forEach(([c,s])=>{
+        if(s>maxSc){ maxSc=s; winner=c; }
       });
     }
 
     await updateRoomState({
-      state: {
-        ...st,
-        revealed: rev,
-        scores: newScores,
-        turnIndex: nextIdx,
-        winner
-      },
+      state: {...st, revealed, scores, turnIndex: nextIdx, winner},
       status: winner ? 'finished' : 'playing'
     });
   }
 };
 
-/* Start Boot App */
+/* ---------- AUTO-STARTUP ---------- */
 boot();
 </script>
 </body>
