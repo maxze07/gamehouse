@@ -573,8 +573,9 @@ const DB = {
   },
   async sendFriendRequest(userCode, friendCode){
     if(!supabase) return {error:'no_db'};
-    const { data: dup } = await supabase.from('friends').select('id').eq('user_code', userCode).eq('friend_code', friendCode);
-    if(dup && dup.length > 0) return {error:'duplicate'};
+    const { data: dupA } = await supabase.from('friends').select('id').eq('user_code', userCode).eq('friend_code', friendCode);
+    const { data: dupB } = await supabase.from('friends').select('id').eq('user_code', friendCode).eq('friend_code', userCode);
+    if((dupA && dupA.length > 0) || (dupB && dupB.length > 0)) return {error:'duplicate'};
     const { error } = await supabase.from('friends').insert([{
       id: genCode(10), user_code: userCode, friend_code: friendCode, status: 'pending'
     }]);
