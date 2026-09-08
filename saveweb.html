@@ -640,8 +640,7 @@
 const SUPABASE_URL = 'https://aeilijrkzbknqgzhqcfs.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFlaWxpanJremJrbnFnemhxY2ZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc2NDEwNDgsImV4cCI6MjEwMzIxNzA0OH0.drZ9SQmikrsEypCPatsUQzgwUelEe0LDwCdqyLuxXGk';
 const BUCKET = 'link-images'; // ชื่อ storage bucket (ต้องสร้างและตั้งเป็น public)
-const TABLE = 'links';        // ชื่อตารางในฐานข้อมูล
-
+const TABLE = 'links';        // ชื่อตารางในฐานข้อมูล (ต้องสร้างด้วย SQL ด้านล่าง)
 /*
 สร้างตารางด้วย SQL นี้ใน Supabase SQL editor:
 
@@ -708,10 +707,15 @@ if(!SUPABASE_URL || SUPABASE_URL.includes('YOUR_SUPABASE_URL') ||
 }
 
 if(!configOk){
-  const errBox = document.getElementById('authError');
-  errBox.textContent = 'ยังไม่ได้ตั้งค่า Supabase URL / anon key ในโค้ด (ดูบรรทัดบนของ <script>) กรุณาใส่ค่าจริงจากโปรเจกต์ Supabase ของคุณก่อนใช้งาน';
-  errBox.style.display = 'block';
-  document.getElementById('authSubmitBtn').disabled = true;
+  const errBox = document.getElementById('loginError');
+  if(errBox){
+    errBox.textContent = 'ยังไม่ได้ตั้งค่า Supabase URL / anon key ในโค้ด (ดูบรรทัดบนของ <script>) กรุณาใส่ค่าจริงจากโปรเจกต์ Supabase ของคุณก่อนใช้งาน';
+    errBox.style.display = 'block';
+  }
+  const loginBtn = document.getElementById('loginSubmitBtn');
+  const signupBtn = document.getElementById('signupSubmitBtn');
+  if(loginBtn) loginBtn.disabled = true;
+  if(signupBtn) signupBtn.disabled = true;
   const dot = document.getElementById('dbStatusDot');
   const txt = document.getElementById('dbStatusText');
   if(dot && txt){ dot.style.background = '#b5533c'; txt.textContent = 'ยังไม่ได้เชื่อมต่อฐานข้อมูล (ยังไม่ได้ตั้งค่า)'; }
