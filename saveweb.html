@@ -486,6 +486,11 @@
       <span id="authToggleText">ยังไม่มีบัญชี?</span>
       <button type="button" id="authToggleBtn">สมัครสมาชิก</button>
     </div>
+
+    <div id="dbStatus" style="text-align:center;margin-top:18px;font-size:11.5px;color:#8fa098;display:flex;align-items:center;justify-content:center;gap:6px;">
+      <span id="dbStatusDot" style="width:7px;height:7px;border-radius:50%;background:#8fa098;display:inline-block;"></span>
+      <span id="dbStatusText">กำลังตรวจสอบการเชื่อมต่อฐานข้อมูล...</span>
+    </div>
   </div>
 </div>
 
@@ -597,8 +602,8 @@
 /* ==================================================================
    ตั้งค่า Supabase — ใส่ URL และ anon key ของโปรเจกต์คุณตรงนี้
 ================================================================== */
-const SUPABASE_URL = 'https://aeilijrkzbknqgzhqcfs.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFlaWxpanJremJrbnFnemhxY2ZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc2NDEwNDgsImV4cCI6MjEwMzIxNzA0OH0.drZ9SQmikrsEypCPatsUQzgwUelEe0LDwCdqyLuxXGk';
+const SUPABASE_URL = 'YOUR_SUPABASE_URL';
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
 const BUCKET = 'link-images'; // ชื่อ storage bucket (ต้องสร้างและตั้งเป็น public)
 const TABLE = 'links';        // ชื่อตารางในฐานข้อมูล
 
@@ -672,7 +677,35 @@ if(!configOk){
   errBox.textContent = 'ยังไม่ได้ตั้งค่า Supabase URL / anon key ในโค้ด (ดูบรรทัดบนของ <script>) กรุณาใส่ค่าจริงจากโปรเจกต์ Supabase ของคุณก่อนใช้งาน';
   errBox.style.display = 'block';
   document.getElementById('authSubmitBtn').disabled = true;
+  const dot = document.getElementById('dbStatusDot');
+  const txt = document.getElementById('dbStatusText');
+  if(dot && txt){ dot.style.background = '#b5533c'; txt.textContent = 'ยังไม่ได้เชื่อมต่อฐานข้อมูล (ยังไม่ได้ตั้งค่า)'; }
 }
+
+/* ---------------- DB connection check ----------------
+   ping ตาราง links แบบเบาๆ เพื่อยืนยันว่าเชื่อมต่อ Supabase/ฐานข้อมูลได้จริง
+   และแสดงสถานะให้ผู้ใช้เห็นบนหน้าล็อกอิน
+------------------------------------------------------------------- */
+async function checkDbConnection(){
+  const dot = document.getElementById('dbStatusDot');
+  const txt = document.getElementById('dbStatusText');
+  if(!configOk || !supabase) return;
+  try{
+    const { error } = await supabase.from(TABLE).select('id', { count: 'exact', head: true });
+    if(error){
+      // ตารางอาจยังไม่ถูกสร้าง แต่การเชื่อมต่อ Supabase (auth) เองยังใช้ได้
+      dot.style.background = '#c8992e';
+      txt.textContent = 'เชื่อมต่อ Supabase ได้ แต่ยังไม่พบตาราง "links" (รัน SQL setup ก่อน)';
+      return;
+    }
+    dot.style.background = '#3e7c6a';
+    txt.textContent = 'เชื่อมต่อฐานข้อมูลสำเร็จ';
+  }catch(err){
+    dot.style.background = '#b5533c';
+    txt.textContent = 'เชื่อมต่อฐานข้อมูลไม่สำเร็จ: ' + err.message;
+  }
+}
+checkDbConnection();
 
 /* ---------------- Auth ---------------- */
 let authMode = 'login'; // login | signup
@@ -709,13 +742,32 @@ $('#authForm').addEventListener('submit', async (e) => {
 
   try{
     if(authMode === 'login'){
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if(error) throw error;
+      if(!data.session){
+        errBox.textContent = 'เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';
+        errBox.style.display = 'block';
+      }
+      // สำเร็จ -> onAuthStateChange จะพาเข้าหน้าแอปให้เอง
     } else {
-      const { error } = await supabase.auth.signUp({ email, password });
+      const { data, error } = await supabase.auth.signUp({ email, password });
       if(error) throw error;
-      noteBox.textContent = 'สมัครสำเร็จ! หากระบบต้องยืนยันอีเมล กรุณาตรวจสอบกล่องจดหมายก่อนเข้าสู่ระบบ';
-      noteBox.style.display = 'block';
+
+      // Supabase trick: ถ้าอีเมลนี้สมัครไปแล้ว (และเปิด Confirm email ไว้)
+      // signUp จะไม่คืน error แต่จะคืน user ที่มี identities เป็น array ว่าง
+      const alreadyRegistered = data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0;
+
+      if(alreadyRegistered){
+        errBox.textContent = 'อีเมลนี้มีบัญชีในระบบอยู่แล้ว กรุณาเข้าสู่ระบบแทน';
+        errBox.style.display = 'block';
+      } else if(data.session){
+        // ปิดยืนยันอีเมลไว้ -> ได้ session ทันที ระบบจะพาเข้าแอปเอง
+        noteBox.textContent = 'สมัครสมาชิกสำเร็จ กำลังพาเข้าสู่ระบบ...';
+        noteBox.style.display = 'block';
+      } else {
+        noteBox.textContent = 'สมัครสำเร็จ! ระบบต้องการยืนยันอีเมล กรุณาตรวจสอบกล่องจดหมาย (รวม Junk/Spam) แล้วกดลิงก์ยืนยันก่อนเข้าสู่ระบบ';
+        noteBox.style.display = 'block';
+      }
     }
   }catch(err){
     errBox.textContent = translateAuthError(err.message);
@@ -726,9 +778,13 @@ $('#authForm').addEventListener('submit', async (e) => {
 });
 
 function translateAuthError(msg){
-  if(/invalid login credentials/i.test(msg)) return 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
-  if(/already registered/i.test(msg)) return 'อีเมลนี้ถูกใช้สมัครแล้ว';
+  if(/invalid login credentials/i.test(msg)) return 'อีเมลหรือรหัสผ่านไม่ถูกต้อง หรือยังไม่เคยสมัครสมาชิกด้วยอีเมลนี้';
+  if(/already registered/i.test(msg) || /already been registered/i.test(msg)) return 'อีเมลนี้มีบัญชีในระบบอยู่แล้ว กรุณาเข้าสู่ระบบแทน';
+  if(/user not found/i.test(msg)) return 'ไม่พบบัญชีผู้ใช้นี้ในระบบ กรุณาสมัครสมาชิกก่อน';
+  if(/email not confirmed/i.test(msg)) return 'อีเมลนี้ยังไม่ได้ยืนยัน กรุณาตรวจสอบกล่องจดหมายและกดลิงก์ยืนยันก่อน';
   if(/password/i.test(msg) && /6/i.test(msg)) return 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร';
+  if(/rate limit/i.test(msg)) return 'มีการพยายามหลายครั้งเกินไป กรุณารอสักครู่แล้วลองใหม่';
+  if(/network/i.test(msg) || /fetch/i.test(msg)) return 'เชื่อมต่ออินเทอร์เน็ต/ฐานข้อมูลไม่สำเร็จ กรุณาลองใหม่';
   return msg;
 }
 
