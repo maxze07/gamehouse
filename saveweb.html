@@ -45,9 +45,11 @@
   .auth-wrap{
     min-height:100vh;
     display:flex;
+    flex-direction: column;
     align-items:center;
     justify-content:center;
     padding:24px;
+    gap: 20px;
   }
   .ledger-cover{
     width:100%;
@@ -462,70 +464,71 @@
 
 <!-- ================= AUTH SCREEN ================= -->
 <div class="auth-wrap" id="authScreen">
-  <div class="ledger-cover">
+  
+  <!-- ---------- LOGIN VIEW (แยกหน้า) ---------- -->
+  <div class="ledger-cover" id="loginView">
     <div class="ledger-mark">฿</div>
+    <h1>เข้าสู่ระบบสมุดบัญชีลิงก์</h1>
+    <p class="sub">เก็บลิงก์รายรับ–รายจ่ายของคุณไว้ในที่เดียว พร้อมรูปภาพประกอบ</p>
 
-    <!-- ---------- LOGIN VIEW ---------- -->
-    <div id="loginView">
-      <h1>เข้าสู่ระบบสมุดบัญชีลิงก์</h1>
-      <p class="sub">เก็บลิงก์รายรับ–รายจ่ายของคุณไว้ในที่เดียว พร้อมรูปภาพประกอบ</p>
+    <div class="auth-error" id="loginError"></div>
+    <div class="auth-note" id="loginNote"></div>
 
-      <div class="auth-error" id="loginError"></div>
-      <div class="auth-note" id="loginNote"></div>
-
-      <form id="loginForm">
-        <div class="field">
-          <label>อีเมล</label>
-          <input type="email" id="loginEmail" placeholder="you@example.com" required autocomplete="email">
-        </div>
-        <div class="field">
-          <label>รหัสผ่าน</label>
-          <input type="password" id="loginPassword" placeholder="อย่างน้อย 6 ตัวอักษร" required autocomplete="current-password" minlength="6">
-        </div>
-        <button type="submit" class="auth-btn" id="loginSubmitBtn">เข้าสู่ระบบ</button>
-      </form>
-
-      <div class="auth-toggle">
-        <span>ยังไม่มีบัญชี?</span>
-        <button type="button" id="goToSignupBtn">สมัครสมาชิก</button>
+    <form id="loginForm">
+      <div class="field">
+        <label>อีเมล</label>
+        <input type="email" id="loginEmail" placeholder="you@example.com" required autocomplete="email">
       </div>
-    </div>
-
-    <!-- ---------- SIGNUP VIEW ---------- -->
-    <div id="signupView" style="display:none;">
-      <h1>สมัครสมาชิกใหม่</h1>
-      <p class="sub">สร้างบัญชีเพื่อเริ่มเก็บลิงก์รายรับ–รายจ่ายของคุณ</p>
-
-      <div class="auth-error" id="signupError"></div>
-      <div class="auth-note" id="signupNote"></div>
-
-      <form id="signupForm">
-        <div class="field">
-          <label>อีเมล</label>
-          <input type="email" id="signupEmail" placeholder="you@example.com" required autocomplete="email">
-        </div>
-        <div class="field">
-          <label>รหัสผ่าน</label>
-          <input type="password" id="signupPassword" placeholder="อย่างน้อย 6 ตัวอักษร" required autocomplete="new-password" minlength="6">
-        </div>
-        <div class="field">
-          <label>ยืนยันรหัสผ่าน</label>
-          <input type="password" id="signupPassword2" placeholder="พิมพ์รหัสผ่านอีกครั้ง" required autocomplete="new-password" minlength="6">
-        </div>
-        <button type="submit" class="auth-btn" id="signupSubmitBtn">สมัครสมาชิก</button>
-      </form>
-
-      <div class="auth-toggle">
-        <span>มีบัญชีอยู่แล้ว?</span>
-        <button type="button" id="goToLoginBtn">เข้าสู่ระบบ</button>
+      <div class="field">
+        <label>รหัสผ่าน</label>
+        <input type="password" id="loginPassword" placeholder="อย่างน้อย 6 ตัวอักษร" required autocomplete="current-password" minlength="6">
       </div>
-    </div>
+      <button type="submit" class="auth-btn" id="loginSubmitBtn">เข้าสู่ระบบ</button>
+    </form>
 
-    <div id="dbStatus" style="text-align:center;margin-top:18px;font-size:11.5px;color:#8fa098;display:flex;align-items:center;justify-content:center;gap:6px;">
-      <span id="dbStatusDot" style="width:7px;height:7px;border-radius:50%;background:#8fa098;display:inline-block;"></span>
-      <span id="dbStatusText">กำลังตรวจสอบการเชื่อมต่อฐานข้อมูล...</span>
+    <div class="auth-toggle">
+      <span>ยังไม่มีบัญชี?</span>
+      <button type="button" id="goToSignupBtn">สมัครสมาชิก</button>
     </div>
   </div>
+
+  <!-- ---------- SIGNUP VIEW (แยกหน้า) ---------- -->
+  <div class="ledger-cover" id="signupView" style="display:none;">
+    <div class="ledger-mark">฿</div>
+    <h1>สมัครสมาชิกใหม่</h1>
+    <p class="sub">สร้างบัญชีเพื่อเริ่มเก็บลิงก์รายรับ–รายจ่ายของคุณ</p>
+
+    <div class="auth-error" id="signupError"></div>
+    <div class="auth-note" id="signupNote"></div>
+
+    <form id="signupForm">
+      <div class="field">
+        <label>อีเมล</label>
+        <input type="email" id="signupEmail" placeholder="you@example.com" required autocomplete="email">
+      </div>
+      <div class="field">
+        <label>รหัสผ่าน</label>
+        <input type="password" id="signupPassword" placeholder="อย่างน้อย 6 ตัวอักษร" required autocomplete="new-password" minlength="6">
+      </div>
+      <div class="field">
+        <label>ยืนยันรหัสผ่าน</label>
+        <input type="password" id="signupPassword2" placeholder="พิมพ์รหัสผ่านอีกครั้ง" required autocomplete="new-password" minlength="6">
+      </div>
+      <button type="submit" class="auth-btn" id="signupSubmitBtn">สมัครสมาชิก</button>
+    </form>
+
+    <div class="auth-toggle">
+      <span>มีบัญชีอยู่แล้ว?</span>
+      <button type="button" id="goToLoginBtn">เข้าสู่ระบบ</button>
+    </div>
+  </div>
+
+  <!-- ย้าย DB Status ออกมาไว้ด้านนอกกล่อง Auth เพื่อความเป็นระเบียบ -->
+  <div id="dbStatus" style="text-align:center; font-size:11.5px; color:#8fa098; display:flex; align-items:center; justify-content:center; gap:6px;">
+    <span id="dbStatusDot" style="width:7px; height:7px; border-radius:50%; background:#8fa098; display:inline-block;"></span>
+    <span id="dbStatusText">กำลังตรวจสอบการเชื่อมต่อฐานข้อมูล...</span>
+  </div>
+
 </div>
 
 <!-- ================= APP ================= -->
@@ -639,33 +642,8 @@
 ================================================================== */
 const SUPABASE_URL = 'https://aeilijrkzbknqgzhqcfs.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFlaWxpanJremJrbnFnemhxY2ZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc2NDEwNDgsImV4cCI6MjEwMzIxNzA0OH0.drZ9SQmikrsEypCPatsUQzgwUelEe0LDwCdqyLuxXGk';
-const BUCKET = 'link-images'; // ชื่อ storage bucket (ต้องสร้างและตั้งเป็น public)
-const TABLE = 'links';        // ชื่อตารางในฐานข้อมูล
-
-/*
-สร้างตารางด้วย SQL นี้ใน Supabase SQL editor:
-
-create table links (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users not null,
-  type text not null check (type in ('income','expense')),
-  category text default 'ทั่วไป',
-  title text not null,
-  url text,
-  image_url text,
-  created_at timestamptz default now()
-);
-
-alter table links enable row level security;
-
-create policy "Users manage their own links"
-on links for all
-using (auth.uid() = user_id)
-with check (auth.uid() = user_id);
-
--- Storage: สร้าง bucket ชื่อ link-images แบบ public ผ่านหน้า Storage ใน Dashboard
--- แล้วเพิ่ม policy อนุญาตให้ authenticated users upload/read/delete ไฟล์ของตัวเอง
-*/
+const BUCKET = 'link-images'; 
+const TABLE = 'links';        
 
 let currentUser = null;
 let allLinks = [];
@@ -687,11 +665,7 @@ function toast(msg){
   t._timer = setTimeout(()=> t.classList.remove('show'), 2400);
 }
 
-/* ---------------- Config check + client creation ----------------
-   ทำเป็น try/catch เพื่อไม่ให้ error ตอนสร้าง client (เช่น URL ยังเป็น
-   placeholder) ไปทำให้โค้ดส่วนอื่น (ปุ่มสลับล็อกอิน/สมัครสมาชิก ฯลฯ)
-   หยุดทำงานไปด้วย
-------------------------------------------------------------------- */
+/* ---------------- Config check + client creation ---------------- */
 let supabase = null;
 let configOk = true;
 
@@ -722,11 +696,7 @@ if(!configOk){
   if(dot && txt){ dot.style.background = '#b5533c'; txt.textContent = 'ยังไม่ได้เชื่อมต่อฐานข้อมูล (ยังไม่ได้ตั้งค่า)'; }
 }
 
-/* ---------------- DB connection check ----------------
-   ping ตาราง links แบบเบาๆ เพื่อยืนยันว่าเชื่อมต่อ Supabase/ฐานข้อมูลได้จริง
-   และแสดงสถานะให้ผู้ใช้เห็นบนหน้าล็อกอิน ใช้ fetch ตรงไปที่ REST endpoint
-   เพราะบางครั้ง client library ค้างเงียบๆ โดยไม่ throw/return ถ้า request ถูกบล็อก
-------------------------------------------------------------------- */
+/* ---------------- DB connection check ---------------- */
 async function checkDbConnection(){
   const dot = document.getElementById('dbStatusDot');
   const txt = document.getElementById('dbStatusText');
@@ -775,7 +745,7 @@ async function checkDbConnection(){
 }
 checkDbConnection();
 
-/* ---------------- Auth: หน้าล็อกอิน / สมัครสมาชิก แยกกันคนละหน้า ---------------- */
+/* ---------------- Auth ---------------- */
 function showLoginView(){
   $('#signupView').style.display = 'none';
   $('#loginView').style.display = 'block';
@@ -811,7 +781,6 @@ $('#loginForm').addEventListener('submit', async (e) => {
       errBox.textContent = 'เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';
       errBox.style.display = 'block';
     }
-    // สำเร็จ -> onAuthStateChange จะพาเข้าหน้าแอปให้เอง
   }catch(err){
     errBox.textContent = translateAuthError(err.message);
     errBox.style.display = 'block';
@@ -846,19 +815,15 @@ $('#signupForm').addEventListener('submit', async (e) => {
     const { data, error } = await supabase.auth.signUp({ email, password });
     if(error) throw error;
 
-    // Supabase trick: ถ้าอีเมลนี้สมัครไปแล้ว (และเปิด Confirm email ไว้)
-    // signUp จะไม่คืน error แต่จะคืน user ที่มี identities เป็น array ว่าง
     const alreadyRegistered = data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0;
 
     if(alreadyRegistered){
       errBox.textContent = 'อีเมลนี้มีบัญชีในระบบอยู่แล้ว กรุณาเข้าสู่ระบบแทน';
       errBox.style.display = 'block';
     } else if(data.session){
-      // ปิดยืนยันอีเมลไว้ -> ได้ session ทันที ระบบจะพาเข้าแอปเอง (onAuthStateChange)
       noteBox.textContent = 'สมัครสมาชิกสำเร็จ กำลังพาเข้าสู่ระบบ...';
       noteBox.style.display = 'block';
     } else {
-      // ต้องยืนยันอีเมลก่อน -> เด้งกลับไปหน้าล็อกอินพร้อมข้อความแจ้ง
       $('#signupForm').reset();
       showLoginView();
       $('#loginEmail').value = email;
