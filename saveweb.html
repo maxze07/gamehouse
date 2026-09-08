@@ -464,27 +464,61 @@
 <div class="auth-wrap" id="authScreen">
   <div class="ledger-cover">
     <div class="ledger-mark">฿</div>
-    <h1 id="authTitle">เข้าสู่ระบบสมุดบัญชีลิงก์</h1>
-    <p class="sub" id="authSub">เก็บลิงก์รายรับ–รายจ่ายของคุณไว้ในที่เดียว พร้อมรูปภาพประกอบ</p>
 
-    <div class="auth-error" id="authError"></div>
-    <div class="auth-note" id="authNote"></div>
+    <!-- ---------- LOGIN VIEW ---------- -->
+    <div id="loginView">
+      <h1>เข้าสู่ระบบสมุดบัญชีลิงก์</h1>
+      <p class="sub">เก็บลิงก์รายรับ–รายจ่ายของคุณไว้ในที่เดียว พร้อมรูปภาพประกอบ</p>
 
-    <form id="authForm">
-      <div class="field">
-        <label>อีเมล</label>
-        <input type="email" id="authEmail" placeholder="you@example.com" required autocomplete="email">
+      <div class="auth-error" id="loginError"></div>
+      <div class="auth-note" id="loginNote"></div>
+
+      <form id="loginForm">
+        <div class="field">
+          <label>อีเมล</label>
+          <input type="email" id="loginEmail" placeholder="you@example.com" required autocomplete="email">
+        </div>
+        <div class="field">
+          <label>รหัสผ่าน</label>
+          <input type="password" id="loginPassword" placeholder="อย่างน้อย 6 ตัวอักษร" required autocomplete="current-password" minlength="6">
+        </div>
+        <button type="submit" class="auth-btn" id="loginSubmitBtn">เข้าสู่ระบบ</button>
+      </form>
+
+      <div class="auth-toggle">
+        <span>ยังไม่มีบัญชี?</span>
+        <button type="button" id="goToSignupBtn">สมัครสมาชิก</button>
       </div>
-      <div class="field">
-        <label>รหัสผ่าน</label>
-        <input type="password" id="authPassword" placeholder="อย่างน้อย 6 ตัวอักษร" required autocomplete="current-password" minlength="6">
-      </div>
-      <button type="submit" class="auth-btn" id="authSubmitBtn">เข้าสู่ระบบ</button>
-    </form>
+    </div>
 
-    <div class="auth-toggle">
-      <span id="authToggleText">ยังไม่มีบัญชี?</span>
-      <button type="button" id="authToggleBtn">สมัครสมาชิก</button>
+    <!-- ---------- SIGNUP VIEW ---------- -->
+    <div id="signupView" style="display:none;">
+      <h1>สมัครสมาชิกใหม่</h1>
+      <p class="sub">สร้างบัญชีเพื่อเริ่มเก็บลิงก์รายรับ–รายจ่ายของคุณ</p>
+
+      <div class="auth-error" id="signupError"></div>
+      <div class="auth-note" id="signupNote"></div>
+
+      <form id="signupForm">
+        <div class="field">
+          <label>อีเมล</label>
+          <input type="email" id="signupEmail" placeholder="you@example.com" required autocomplete="email">
+        </div>
+        <div class="field">
+          <label>รหัสผ่าน</label>
+          <input type="password" id="signupPassword" placeholder="อย่างน้อย 6 ตัวอักษร" required autocomplete="new-password" minlength="6">
+        </div>
+        <div class="field">
+          <label>ยืนยันรหัสผ่าน</label>
+          <input type="password" id="signupPassword2" placeholder="พิมพ์รหัสผ่านอีกครั้ง" required autocomplete="new-password" minlength="6">
+        </div>
+        <button type="submit" class="auth-btn" id="signupSubmitBtn">สมัครสมาชิก</button>
+      </form>
+
+      <div class="auth-toggle">
+        <span>มีบัญชีอยู่แล้ว?</span>
+        <button type="button" id="goToLoginBtn">เข้าสู่ระบบ</button>
+      </div>
     </div>
 
     <div id="dbStatus" style="text-align:center;margin-top:18px;font-size:11.5px;color:#8fa098;display:flex;align-items:center;justify-content:center;gap:6px;">
@@ -495,6 +529,7 @@
 </div>
 
 <!-- ================= APP ================= -->
+
 <div id="app">
   <div class="topbar">
     <div class="topbar-inner">
@@ -684,96 +719,153 @@ if(!configOk){
 
 /* ---------------- DB connection check ----------------
    ping ตาราง links แบบเบาๆ เพื่อยืนยันว่าเชื่อมต่อ Supabase/ฐานข้อมูลได้จริง
-   และแสดงสถานะให้ผู้ใช้เห็นบนหน้าล็อกอิน
+   และแสดงสถานะให้ผู้ใช้เห็นบนหน้าล็อกอิน ใช้ fetch ตรงไปที่ REST endpoint
+   เพราะบางครั้ง client library ค้างเงียบๆ โดยไม่ throw/return ถ้า request ถูกบล็อก
 ------------------------------------------------------------------- */
 async function checkDbConnection(){
   const dot = document.getElementById('dbStatusDot');
   const txt = document.getElementById('dbStatusText');
   if(!configOk || !supabase) return;
+
+  dot.style.background = '#8fa098';
+  txt.textContent = 'กำลังตรวจสอบการเชื่อมต่อฐานข้อมูล...';
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 6000);
+
   try{
-    const { error } = await supabase.from(TABLE).select('id', { count: 'exact', head: true });
-    if(error){
-      // ตารางอาจยังไม่ถูกสร้าง แต่การเชื่อมต่อ Supabase (auth) เองยังใช้ได้
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?select=id&limit=1`, {
+      method: 'GET',
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`
+      },
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+
+    if(res.status === 200 || res.status === 206){
+      dot.style.background = '#3e7c6a';
+      txt.textContent = 'เชื่อมต่อฐานข้อมูลสำเร็จ';
+    } else if(res.status === 404){
       dot.style.background = '#c8992e';
       txt.textContent = 'เชื่อมต่อ Supabase ได้ แต่ยังไม่พบตาราง "links" (รัน SQL setup ก่อน)';
-      return;
+    } else if(res.status === 401 || res.status === 403){
+      dot.style.background = '#c8992e';
+      txt.textContent = 'เชื่อมต่อ Supabase ได้ แต่ anon key ไม่มีสิทธิ์เข้าถึง (เช็ค RLS policy หรือ key)';
+    } else {
+      const body = await res.text().catch(() => '');
+      dot.style.background = '#b5533c';
+      txt.textContent = `เชื่อมต่อไม่สำเร็จ (HTTP ${res.status}) ${body ? '- ' + body.slice(0,80) : ''}`;
     }
-    dot.style.background = '#3e7c6a';
-    txt.textContent = 'เชื่อมต่อฐานข้อมูลสำเร็จ';
   }catch(err){
+    clearTimeout(timer);
     dot.style.background = '#b5533c';
-    txt.textContent = 'เชื่อมต่อฐานข้อมูลไม่สำเร็จ: ' + err.message;
+    if(err.name === 'AbortError'){
+      txt.textContent = 'หมดเวลาเชื่อมต่อ — โปรเจกต์ Supabase อาจถูก Pause อยู่ ลองเข้า Dashboard เพื่อ Resume โปรเจกต์';
+    } else {
+      txt.textContent = 'เชื่อมต่อฐานข้อมูลไม่สำเร็จ: อาจถูกบล็อกโดยเน็ตเวิร์ก/เอ็กซ์เทนชัน (' + err.message + ')';
+    }
   }
 }
 checkDbConnection();
 
-/* ---------------- Auth ---------------- */
-let authMode = 'login'; // login | signup
+/* ---------------- Auth: หน้าล็อกอิน / สมัครสมาชิก แยกกันคนละหน้า ---------------- */
+function showLoginView(){
+  $('#signupView').style.display = 'none';
+  $('#loginView').style.display = 'block';
+  $('#signupError').style.display = 'none';
+  $('#signupNote').style.display = 'none';
+}
+function showSignupView(){
+  $('#loginView').style.display = 'none';
+  $('#signupView').style.display = 'block';
+  $('#loginError').style.display = 'none';
+  $('#loginNote').style.display = 'none';
+}
+$('#goToSignupBtn').addEventListener('click', showSignupView);
+$('#goToLoginBtn').addEventListener('click', showLoginView);
 
-$('#authToggleBtn').addEventListener('click', () => {
-  authMode = authMode === 'login' ? 'signup' : 'login';
-  if(authMode === 'signup'){
-    $('#authTitle').textContent = 'สมัครสมาชิกใหม่';
-    $('#authSub').textContent = 'สร้างบัญชีเพื่อเริ่มเก็บลิงก์รายรับ–รายจ่ายของคุณ';
-    $('#authSubmitBtn').textContent = 'สมัครสมาชิก';
-    $('#authToggleText').textContent = 'มีบัญชีอยู่แล้ว?';
-    $('#authToggleBtn').textContent = 'เข้าสู่ระบบ';
-  } else {
-    $('#authTitle').textContent = 'เข้าสู่ระบบสมุดบัญชีลิงก์';
-    $('#authSub').textContent = 'เก็บลิงก์รายรับ–รายจ่ายของคุณไว้ในที่เดียว พร้อมรูปภาพประกอบ';
-    $('#authSubmitBtn').textContent = 'เข้าสู่ระบบ';
-    $('#authToggleText').textContent = 'ยังไม่มีบัญชี?';
-    $('#authToggleBtn').textContent = 'สมัครสมาชิก';
-  }
-  $('#authError').style.display = 'none';
-  $('#authNote').style.display = 'none';
-});
-
-$('#authForm').addEventListener('submit', async (e) => {
+/* ---- Login ---- */
+$('#loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   if(!configOk){ toast('กรุณาตั้งค่า Supabase URL / anon key ในโค้ดก่อน'); return; }
-  const email = $('#authEmail').value.trim();
-  const password = $('#authPassword').value;
-  const errBox = $('#authError');
-  const noteBox = $('#authNote');
+  const email = $('#loginEmail').value.trim();
+  const password = $('#loginPassword').value;
+  const errBox = $('#loginError');
+  const noteBox = $('#loginNote');
   errBox.style.display = 'none';
   noteBox.style.display = 'none';
-  $('#authSubmitBtn').disabled = true;
+  $('#loginSubmitBtn').disabled = true;
+  $('#loginSubmitBtn').textContent = 'กำลังเข้าสู่ระบบ...';
 
   try{
-    if(authMode === 'login'){
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if(error) throw error;
-      if(!data.session){
-        errBox.textContent = 'เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';
-        errBox.style.display = 'block';
-      }
-      // สำเร็จ -> onAuthStateChange จะพาเข้าหน้าแอปให้เอง
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if(error) throw error;
+    if(!data.session){
+      errBox.textContent = 'เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';
+      errBox.style.display = 'block';
+    }
+    // สำเร็จ -> onAuthStateChange จะพาเข้าหน้าแอปให้เอง
+  }catch(err){
+    errBox.textContent = translateAuthError(err.message);
+    errBox.style.display = 'block';
+  }finally{
+    $('#loginSubmitBtn').disabled = false;
+    $('#loginSubmitBtn').textContent = 'เข้าสู่ระบบ';
+  }
+});
+
+/* ---- Signup ---- */
+$('#signupForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if(!configOk){ toast('กรุณาตั้งค่า Supabase URL / anon key ในโค้ดก่อน'); return; }
+  const email = $('#signupEmail').value.trim();
+  const password = $('#signupPassword').value;
+  const password2 = $('#signupPassword2').value;
+  const errBox = $('#signupError');
+  const noteBox = $('#signupNote');
+  errBox.style.display = 'none';
+  noteBox.style.display = 'none';
+
+  if(password !== password2){
+    errBox.textContent = 'รหัสผ่านทั้งสองช่องไม่ตรงกัน';
+    errBox.style.display = 'block';
+    return;
+  }
+
+  $('#signupSubmitBtn').disabled = true;
+  $('#signupSubmitBtn').textContent = 'กำลังสมัครสมาชิก...';
+
+  try{
+    const { data, error } = await supabase.auth.signUp({ email, password });
+    if(error) throw error;
+
+    // Supabase trick: ถ้าอีเมลนี้สมัครไปแล้ว (และเปิด Confirm email ไว้)
+    // signUp จะไม่คืน error แต่จะคืน user ที่มี identities เป็น array ว่าง
+    const alreadyRegistered = data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0;
+
+    if(alreadyRegistered){
+      errBox.textContent = 'อีเมลนี้มีบัญชีในระบบอยู่แล้ว กรุณาเข้าสู่ระบบแทน';
+      errBox.style.display = 'block';
+    } else if(data.session){
+      // ปิดยืนยันอีเมลไว้ -> ได้ session ทันที ระบบจะพาเข้าแอปเอง (onAuthStateChange)
+      noteBox.textContent = 'สมัครสมาชิกสำเร็จ กำลังพาเข้าสู่ระบบ...';
+      noteBox.style.display = 'block';
     } else {
-      const { data, error } = await supabase.auth.signUp({ email, password });
-      if(error) throw error;
-
-      // Supabase trick: ถ้าอีเมลนี้สมัครไปแล้ว (และเปิด Confirm email ไว้)
-      // signUp จะไม่คืน error แต่จะคืน user ที่มี identities เป็น array ว่าง
-      const alreadyRegistered = data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0;
-
-      if(alreadyRegistered){
-        errBox.textContent = 'อีเมลนี้มีบัญชีในระบบอยู่แล้ว กรุณาเข้าสู่ระบบแทน';
-        errBox.style.display = 'block';
-      } else if(data.session){
-        // ปิดยืนยันอีเมลไว้ -> ได้ session ทันที ระบบจะพาเข้าแอปเอง
-        noteBox.textContent = 'สมัครสมาชิกสำเร็จ กำลังพาเข้าสู่ระบบ...';
-        noteBox.style.display = 'block';
-      } else {
-        noteBox.textContent = 'สมัครสำเร็จ! ระบบต้องการยืนยันอีเมล กรุณาตรวจสอบกล่องจดหมาย (รวม Junk/Spam) แล้วกดลิงก์ยืนยันก่อนเข้าสู่ระบบ';
-        noteBox.style.display = 'block';
-      }
+      // ต้องยืนยันอีเมลก่อน -> เด้งกลับไปหน้าล็อกอินพร้อมข้อความแจ้ง
+      $('#signupForm').reset();
+      showLoginView();
+      $('#loginEmail').value = email;
+      $('#loginNote').textContent = 'สมัครสำเร็จ! ระบบต้องการยืนยันอีเมล กรุณาตรวจสอบกล่องจดหมาย (รวม Junk/Spam) แล้วกดลิงก์ยืนยัน จากนั้นกลับมาเข้าสู่ระบบที่นี่';
+      $('#loginNote').style.display = 'block';
     }
   }catch(err){
     errBox.textContent = translateAuthError(err.message);
     errBox.style.display = 'block';
   }finally{
-    $('#authSubmitBtn').disabled = false;
+    $('#signupSubmitBtn').disabled = false;
+    $('#signupSubmitBtn').textContent = 'สมัครสมาชิก';
   }
 });
 
@@ -805,6 +897,7 @@ if(configOk){
     } else {
       $('#authScreen').style.display = 'flex';
       $('#app').style.display = 'none';
+      showLoginView();
     }
   });
 }
