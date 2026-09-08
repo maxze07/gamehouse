@@ -627,8 +627,6 @@ with check (auth.uid() = user_id);
 -- แล้วเพิ่ม policy อนุญาตให้ authenticated users upload/read/delete ไฟล์ของตัวเอง
 */
 
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
 let currentUser = null;
 let allLinks = [];
 let activeTab = 'income';
@@ -647,6 +645,33 @@ function toast(msg){
   t.classList.add('show');
   clearTimeout(t._timer);
   t._timer = setTimeout(()=> t.classList.remove('show'), 2400);
+}
+
+/* ---------------- Config check + client creation ----------------
+   ทำเป็น try/catch เพื่อไม่ให้ error ตอนสร้าง client (เช่น URL ยังเป็น
+   placeholder) ไปทำให้โค้ดส่วนอื่น (ปุ่มสลับล็อกอิน/สมัครสมาชิก ฯลฯ)
+   หยุดทำงานไปด้วย
+------------------------------------------------------------------- */
+let supabase = null;
+let configOk = true;
+
+if(!SUPABASE_URL || SUPABASE_URL.includes('YOUR_SUPABASE_URL') ||
+   !SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.includes('YOUR_SUPABASE_ANON_KEY')){
+  configOk = false;
+} else {
+  try{
+    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  }catch(err){
+    configOk = false;
+    console.error('Supabase init error:', err);
+  }
+}
+
+if(!configOk){
+  const errBox = document.getElementById('authError');
+  errBox.textContent = 'ยังไม่ได้ตั้งค่า Supabase URL / anon key ในโค้ด (ดูบรรทัดบนของ <script>) กรุณาใส่ค่าจริงจากโปรเจกต์ Supabase ของคุณก่อนใช้งาน';
+  errBox.style.display = 'block';
+  document.getElementById('authSubmitBtn').disabled = true;
 }
 
 /* ---------------- Auth ---------------- */
@@ -673,6 +698,7 @@ $('#authToggleBtn').addEventListener('click', () => {
 
 $('#authForm').addEventListener('submit', async (e) => {
   e.preventDefault();
+  if(!configOk){ toast('กรุณาตั้งค่า Supabase URL / anon key ในโค้ดก่อน'); return; }
   const email = $('#authEmail').value.trim();
   const password = $('#authPassword').value;
   const errBox = $('#authError');
@@ -707,22 +733,25 @@ function translateAuthError(msg){
 }
 
 $('#logoutBtn').addEventListener('click', async () => {
+  if(!configOk) return;
   await supabase.auth.signOut();
 });
 
-supabase.auth.onAuthStateChange((event, session) => {
-  currentUser = session?.user || null;
-  if(currentUser){
-    $('#authScreen').style.display = 'none';
-    $('#app').style.display = 'block';
-    $('#userEmail').textContent = currentUser.email;
-    $('#userAvatar').textContent = currentUser.email[0].toUpperCase();
-    fetchLinks();
-  } else {
-    $('#authScreen').style.display = 'flex';
-    $('#app').style.display = 'none';
-  }
-});
+if(configOk){
+  supabase.auth.onAuthStateChange((event, session) => {
+    currentUser = session?.user || null;
+    if(currentUser){
+      $('#authScreen').style.display = 'none';
+      $('#app').style.display = 'block';
+      $('#userEmail').textContent = currentUser.email;
+      $('#userAvatar').textContent = currentUser.email[0].toUpperCase();
+      fetchLinks();
+    } else {
+      $('#authScreen').style.display = 'flex';
+      $('#app').style.display = 'none';
+    }
+  });
+}
 
 /* ---------------- Tabs ---------------- */
 $$('.tab-btn').forEach(btn => {
